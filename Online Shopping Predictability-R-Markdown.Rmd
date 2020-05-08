@@ -1,0 +1,947 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    toc: yes
+  word_document:
+    toc: yes
+---
+# Importing the needed Libraries 
+```{r include=FALSE}
+library(dplyr)
+library(reshape2)
+library(ggplot2)
+library(Hmisc)
+library(corrplot)
+library(mice)
+library(VIM)
+library(sqldf)
+library(pROC)
+library(caret)
+library(tidyverse)
+library(lubridate)
+library(tidyr)
+library(tseries)
+library(corrplot)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(viridis)
+library(hrbrthemes)
+library(plyr)
+library (gmodels); library (MASS)
+library(profvis)
+#setwd("C:/Users/AbdulsalamFawzi/OneDrive - The Massey Centre for Women/York CS - Big Data/CSDA1010-022-O-W20S3/Final #Project_SHOPPERS/Final_")
+DF1 <- read.csv("online_shoppers_intention.csv")
+head(DF1)
+```
+# Data exploration 
+```{r}
+str(DF1)
+```
+
+
+```{r }
+summary(DF1)
+
+```
+```{r }
+
+glimpse(DF1)
+```
+```{r}
+count(DF1$VisitorType)
+
+```
+```{r}
+
+count(DF1$Month)
+```
+
+```{r}
+
+#Dropping Month, the column is missing values for Jan and April.
+#drop(DF1$Month)
+DF2 <- DF1[c(1:10,12:18)]
+head(DF2)
+```
+
+
+```{r}
+#Convert Visitor type, Weekend and Revenue to numeric
+VisitorType <- factor(DF2$VisitorType)
+DF2$VisitorType <- as.numeric(VisitorType)
+DF2$Weekend=ifelse(DF2$Weekend=="TRUE",1,0)
+DF2$Revenue=ifelse(DF2$Revenue=="TRUE",1,0)
+
+```
+
+```{r}
+glimpse(DF2)
+```
+
+
+
+```{r }
+#check for missing values 
+library(VIM)
+
+# 'aggr' plots the amount of missing/imputed values in each column
+aggr(DF2)
+```
+# Plotting the data 
+```{r fig.height=10, fig.width=10, message=TRUE, warning=TRUE, paged.print=TRUE}
+#plotting the data
+par(mfcol=c(4,5))
+plot(DF2$Revenue,main="Histogram of Revenue")
+plot(DF2$Weekend,main="Histogram of Weekend")
+plot (DF2$VisitorType,main="Histogram of VisitorType")
+plot(DF2$TrafficType,main="Histogram of TrafficType")
+plot(DF2$Region,main="Histogram of Region")
+plot(DF2$Browser,main="Histogram of Browser")
+plot(DF2$OperatingSystems,main="Histogram of OperatingSystems")
+
+plot(DF2$Administrative, main = "Histogram of Administrative")
+plot(DF2$Administrative_Duration, main = "Histogram of Administrative_Duration")
+plot(DF2$Informational, main = "Histogram of Informational")
+plot(DF2$Informational_Duration, main = "Histogram of Informational_Duration")
+plot(DF2$ProductRelated, main = "Histogram of Product Related")
+plot(DF2$ProductRelated_Duration, main = "Histogram of ProductRelated_Duration")
+plot(DF2$BounceRates, main = "Histogram of BounceRates")
+plot(DF2$ExitRates, main = "Histogram of ExitRates")
+plot(DF2$PageValues, main = "Histogram of PageValues")
+plot(DF2$SpecialDay, main = "Histogram of SpecialDay")
+    
+```
+
+
+
+# Data Correlation
+```{r fig.height=10, fig.width=10, message=TRUE, warning=TRUE, paged.print=TRUE}
+cor.matrix <- cor(DF2, method = "pearson", use = "complete.obs")
+corrplot(cor.matrix)
+```
+# Number of columns
+```{r}
+ncol(DF2)
+```
+# Number of Rows
+```{r}
+nrow(DF2)
+```
+
+
+```{r }
+print(summary(DF2$Revenue))
+
+hist(DF2$Region)
+```
+
+
+```{r }
+names(DF2)
+```
+
+```{r fig.height=10, fig.width=10, message=TRUE, warning=TRUE, paged.print=TRUE}
+#Numeric features only
+cor(DF2)
+```
+
+
+
+```{r eval=FALSE, fig.width=10, message=TRUE, warning=TRUE, include=FALSE, paged.print=TRUE}
+
+
+CrossTable(DF2$Revenue)
+```
+
+```{r fig.height=10, fig.width=10, message=TRUE, warning=TRUE, paged.print=TRUE}
+
+CrossTable(DF2$Region,DF2$Revenue)
+```
+```{r fig.height=10, fig.width=10, message=TRUE, warning=TRUE, paged.print=TRUE}
+
+CrossTable(DF2$Browser,DF2$Revenue)
+```
+```{r}
+
+CrossTable(DF2$TrafficType,DF2$Revenue)
+```
+
+```{r fig.height=10, fig.width=10, message=TRUE, warning=TRUE, paged.print=TRUE}
+
+CrossTable(DF2$VisitorType,DF2$Revenue)
+```
+```{r fig.height=10, fig.width=10, message=TRUE, warning=TRUE, paged.print=TRUE}
+
+CrossTable(DF2$Month,DF2$VisitorType)
+```
+
+
+```{r}
+
+CrossTable(DF2$SpecialDay,DF2$Revenue)
+```
+
+
+```{r fig.height=10, fig.width=10, message=TRUE, warning=TRUE, paged.print=TRUE}
+library(ggplot2)
+weekend_table <- table(DF2$Weekend, DF2$Revenue)
+weekend_tab <- as.data.frame(prop.table(weekend_table, 2))
+colnames(weekend_tab) <- c("Weekend", "Revenue", "Percent")
+ggplot(data = weekend_tab, aes(x = Weekend, y = Percent, fill = Revenue)) +
+geom_bar(stat = 'identity', position = 'dodge', alpha = 2/3) +
+xlab("Weekend")+
+ylab("Percent")
+
+```
+```{r }
+ggplot(data = DF2, mapping = aes(x = Revenue)) + geom_bar()
+```
+
+```{r }
+prop.table(table(DF2$Revenue))
+
+```
+
+# Creating Training and Test Data 70/30
+```{r }
+# Create Training Data
+input_ones <- DF2[which(DF2$Revenue == 1), ]  # all 1's
+input_zeros <- DF2[which(DF2$Revenue == 0), ]  # all 0's
+set.seed(100)  # for repeatability of samples
+input_ones_training_rows <- sample(1:nrow(input_ones), 0.7*nrow(input_ones))  # 1's for training
+input_zeros_training_rows <- sample(1:nrow(input_zeros), 0.7*nrow(input_ones))  # 0's for training. Pick as many 0's as 1's
+training_ones <- input_ones[input_ones_training_rows, ]  
+training_zeros <- input_zeros[input_zeros_training_rows, ]
+trainingData <- rbind(training_ones, training_zeros)  # row bind the 1's and 0's 
+
+# Create Test Data
+test_ones <- input_ones[-input_ones_training_rows, ]
+test_zeros <- input_zeros[-input_zeros_training_rows, ]
+testData <- rbind(test_ones, test_zeros)  # row bind the 1's and 0's 
+
+#REF: http://r-statistics.co/Logistic-Regression-With-R.html 
+```
+
+```{r }
+head(trainingData)
+```
+# Logistics Regression
+```{r warning=FALSE}
+# Logistics Regression
+glm.fit <- glm(Revenue ~ Administrative + Administrative_Duration + Informational + Informational_Duration + ProductRelated + ProductRelated_Duration +  BounceRates + ExitRates + PageValues + SpecialDay +  OperatingSystems + Browser + Region + TrafficType + VisitorType + Weekend, data = trainingData, family="binomial")
+```
+
+```{r warning=FALSE}
+predicted <- plogis(predict(glm.fit, testData))
+
+library(InformationValue)
+optCutOff <- optimalCutoff(testData$Revenue, predicted)[1]
+optCutOff
+
+```
+
+```{r }
+
+sensitivity(testData$Revenue, predicted, threshold = optCutOff)
+
+specificity(testData$Revenue, predicted, threshold = optCutOff)
+
+
+
+```
+
+```{r }
+
+CM = confusionMatrix(testData$Revenue, predicted, threshold = optCutOff)
+CM
+```
+
+```{r }
+summary(glm.fit)
+```
+
+```{R echo=FALSE, warning=FALSE}
+library(car)
+vif(glm.fit)
+
+
+```
+```{R}
+
+plotROC(testData$Revenue, predicted)
+
+
+```
+
+```{R warning=FALSE}
+
+
+confint(glm.fit)
+
+```
+
+```{r}
+exp(coef(glm.fit))
+```
+
+```{r warning=FALSE}
+## odds ratios and 95% CI
+exp(cbind(OR = coef(glm.fit), confint(glm.fit)))
+```
+
+
+```{r}
+glm.probs <- predict(glm.fit,type = "response")
+```
+
+```{r }
+
+
+glm.pred <- ifelse(glm.probs > 0.5, "True", "False")
+```
+
+
+```{r eval=FALSE, include=FALSE}
+library(caret)
+ 
+preproc1 <- preProcess(DF2, method=c("center", "scale"))
+ 
+norm1 <- predict(preproc1, DF2)
+ 
+summary(norm1)
+```
+## Balance train test data
+### now let's try to balance the data by minmizing the zeros of the training set from 70% to35% of the original data while keeping the ones @ 70%
+
+```{r }
+# Create Training Data
+input_ones <- DF2[which(DF2$Revenue == 1), ]  # all 1's
+
+input_zeros <- DF2[which(DF2$Revenue == 0), ]  # all 0's
+
+set.seed(100)  # for repeatability of samples
+input_ones_training_rows <- sample(1:nrow(input_ones), 0.7*nrow(input_ones))  # 1's for training
+input_zeros_training_rows_half <- sample(1:nrow(input_zeros), 0.35*nrow(input_ones))  # 0's for training. Pick as many 0's as 1's
+training_ones <- input_ones[input_ones_training_rows, ]  
+training_zeros_Half <- input_zeros[input_zeros_training_rows_half, ]
+trainingData_Half <- rbind(training_ones, training_zeros_Half)  # row bind the 1's and 0's 
+
+# Create Test Data
+test_ones <- input_ones[-input_ones_training_rows, ]
+test_zeros_Half <- input_zeros[-input_zeros_training_rows_half, ]
+testData_Half <- rbind(test_ones, test_zeros_Half)  # row bind the 1's and 0's 
+
+#REF: http://r-statistics.co/Logistic-Regression-With-R.html 
+
+```
+
+# Balanced Logistics Regression (Balanced Training Data)
+```{r warning=FALSE}
+# Logistics Regression
+glm.fit_Half <- glm(Revenue ~ Administrative + Administrative_Duration + Informational + Informational_Duration + ProductRelated + ProductRelated_Duration +  BounceRates + ExitRates + PageValues + SpecialDay +  OperatingSystems + Browser + Region + TrafficType + VisitorType + Weekend, data = trainingData_Half, family="binomial")
+```
+
+```{r warning=FALSE}
+predicted_Half <- plogis(predict(glm.fit, testData_Half))
+
+library(InformationValue)
+optCutOff_Half <- optimalCutoff(testData_Half$Revenue, predicted)[1]
+optCutOff
+
+```
+
+```{r }
+
+sensitivity(testData_Half$Revenue, predicted_Half, threshold = optCutOff_Half)
+
+specificity(testData_Half$Revenue, predicted_Half, threshold = optCutOff_Half)
+
+
+
+```
+
+```{r }
+
+CM_Half =confusionMatrix(testData_Half$Revenue, predicted_Half, threshold = optCutOff_Half)
+CM_Half
+```
+```{r }
+#FIrst CM 
+print(CM )
+
+
+```
+
+
+
+```{r }
+summary(glm.fit_Half)
+```
+
+```{R echo=FALSE, warning=FALSE}
+library(car)
+vif(glm.fit_Half)
+
+
+```
+```{R}
+
+plotROC(testData_Half$Revenue, predicted_Half)
+
+
+```
+
+```{R warning=FALSE}
+
+
+confint(glm.fit_Half)
+
+```
+
+```{r}
+exp(coef(glm.fit_Half))
+```
+
+```{r warning=FALSE}
+## odds ratios and 95% CI
+exp(cbind(OR = coef(glm.fit_Half), confint(glm.fit_Half)))
+```
+
+
+```{r}
+glm.probs_Half <- predict(glm.fit_Half,type = "response")
+```
+
+```{r }
+
+
+glm.pred_Half <- ifelse(glm.probs_Half > 0.5, "True", "False")
+```
+
+
+```{r eval=FALSE, include=FALSE}
+library(caret)
+ 
+preproc1_Half <- preProcess(DF2, method=c("center", "scale"))
+ 
+norm1_Half <- predict(preproc1_Half, DF2)
+ 
+summary(norm1_Half)
+```
+
+
+
+
+
+
+
+# K-Mean Clustering without scaling 
+
+## Elbow Method
+```{r warning=FALSE}
+
+set.seed(123)
+
+# function to compute total within-cluster sum of square 
+wss <- function(k) {
+  kmeans(DF2, k, nstart = 10 )$tot.withinss
+}
+
+# Compute and plot wss for k = 1 to k = 15
+k.values <- 1:15
+
+# extract wss for 2-15 clusters
+wss_values <- map_dbl(k.values, wss)
+
+plot(k.values, wss_values,
+       type="b", pch = 19, frame = FALSE, 
+       xlab="Number of clusters K",
+       ylab="Total within-clusters sum of squares")
+
+``` 
+## The Model
+
+```{r}
+# As we saw above 4 was the optimal number of clusters.
+
+set.seed(240)
+clusters <- kmeans(DF2[, 1:17],4 , nstart = 10)
+
+# Save the cluster number in the dataset as column 'Borough'
+DF2$Borough <- as.factor(clusters$cluster)
+```
+## The clusters
+```{r }
+str(clusters)
+
+```
+
+```{r echo=TRUE, fig.height=20, fig.width=20, message=TRUE, warning=TRUE, paged.print=TRUE}
+DF2$KMEAN = clusters$cluster
+```
+
+```{r fig.height=10, fig.width=10, message=TRUE, warning=TRUE, paged.print=TRUE}
+
+CrossTable(DF2$KMEAN,DF2$Revenue)
+```
+
+
+
+
+```{r warning=FALSE}
+
+clusters$withinss
+"----------------------------------------------------------------------------"
+clusters$tot.withinss/clusters$betweenss
+
+```
+
+```{R}
+
+data.frame(clusters$centers)
+
+
+```
+
+
+## Visual
+```{r echo=TRUE, fig.height=20, fig.width=20, message=TRUE, warning=TRUE, paged.print=TRUE}
+library("cluster")
+clusplot(pam(trainingData,4))
+
+```
+
+```{r warning=FALSE}
+library (factoextra)
+library (ggplot2)
+fviz_cluster(clusters, data = DF2[1:16],ellipse=TRUE)
+```
+```{r fig.height=20, fig.width=20, message=TRUE, warning=TRUE, paged.print=TRUE}
+
+
+# Cluster Plot against 1st 2 principal components
+
+# vary parameters for most readable graph
+library(cluster)
+clusplot(DF2, clusters$cluster, color=TRUE, shade=TRUE,
+   labels=2, lines=0)
+
+# Centroid Plot against 1st 2 discriminant functions
+
+```
+
+```{r fig.height=20, fig.width=20, message=TRUE, warning=TRUE, paged.print=TRUE}
+library(fpc)
+plotcluster(DF2[1:17], clusters$cluster)
+```
+## silhouette Plot
+```{R silhouette Plot Original Data}
+#Preperation 
+library (vegan)
+dis = dist(DF2)^2
+res = clusters
+sil = silhouette (res$cluster, dis)
+
+```
+
+```{r}
+summary(sil)
+
+```
+
+
+```{r}
+#Plot
+plot(sil, nmax= 10, cex.names=0.9)
+
+
+```
+
+```{R eval=FALSE, include=FALSE}
+#Slow and not usefull 
+plot(DF2, col = clusters$cluster)
+text(x = DF2, labels = rownames(DF2), col = clusters$cluster,
+     pos = 3, cex = 0.75)
+```
+
+
+
+
+
+# K-Mean Clustering with scaling 
+## Elbow Method scaled data
+```{r warning=FALSE}
+Scaled_DF_1 <- as.data.frame(scale(DF2[1:17]))
+set.seed(123)
+
+# function to compute total within-cluster sum of square 
+wss <- function(k) {
+  kmeans(Scaled_DF_1, k, nstart = 10 )$tot.withinss
+}
+
+# Compute and plot wss for k = 1 to k = 15
+k.values <- 1:15
+
+# extract wss for 2-15 clusters
+wss_values <- map_dbl(k.values, wss)
+
+plot(k.values, wss_values,
+       type="b", pch = 19, frame = FALSE, 
+       xlab="Number of clusters K",
+       ylab="Total within-clusters sum of squares")
+
+``` 
+## The Model - Scaled Data
+
+```{r}
+# As we saw above 4 was the optimal number of clusters.
+
+set.seed(240)
+clusters_1 <- kmeans(Scaled_DF_1[, 1:17],4 , nstart = 10)
+
+# Save the cluster number in the dataset as column 'Borough'
+DF2$KMEAN_SCALED <- as.factor(clusters$cluster)
+```
+## The clusters Scaled Data
+```{r }
+str(clusters_1)
+
+```
+
+
+
+```{r fig.height=10, fig.width=10, message=TRUE, warning=TRUE, paged.print=TRUE}
+
+CrossTable(DF2$KMEAN_SCALED,DF2$Revenue)
+```
+
+```{r fig.height=10, fig.width=10, message=TRUE, warning=TRUE, paged.print=TRUE}
+
+CrossTable(DF2$KMEAN,DF2$Revenue)
+```
+
+
+
+```{r warning=FALSE}
+
+clusters_1$withinss
+"----------------------------------------------------------------------------"
+clusters_1$tot.withinss/clusters_1$betweenss
+
+```
+
+```{R}
+
+data.frame(clusters_1$centers)
+
+
+```
+
+
+## Visual
+```{r echo=TRUE, fig.height=20, fig.width=20, message=TRUE, warning=TRUE, paged.print=TRUE}
+library("cluster")
+clusplot(pam(DF2,4))
+
+```
+
+```{r warning=FALSE}
+library (factoextra)
+library (ggplot2)
+fviz_cluster(clusters_1, data = DF2[1:16],ellipse=TRUE)
+```
+```{r fig.height=20, fig.width=20, message=TRUE, warning=TRUE, paged.print=TRUE}
+
+
+# Cluster Plot against 1st 2 principal components
+
+# vary parameters for most readable graph
+library(cluster)
+clusplot(DF2, clusters_1$cluster, color=TRUE, shade=TRUE,
+   labels=2, lines=0)
+
+# Centroid Plot against 1st 2 discriminant functions
+
+```
+
+```{r fig.height=20, fig.width=20, message=TRUE, warning=TRUE, paged.print=TRUE}
+library(fpc)
+plotcluster(DF2[1:17], clusters_1$cluster)
+```
+## silhouette Plot
+```{R silhouette Plot Scaled Data}
+#Preperation 
+library (vegan)
+dis = dist(DF2)^2
+res = clusters_1
+sil = silhouette (res$cluster, dis)
+
+```
+
+```{r}
+summary(sil)
+
+```
+
+
+```{r}
+#Plot
+plot(sil, nmax= 10, cex.names=0.9)
+
+
+```
+
+```{R eval=FALSE, include=FALSE}
+#Slow and not usefull 
+plot(DF2, col = clusters_1$cluster)
+text(x = DF2, labels = rownames(DF2), col = clusters_1$cluster,
+     pos = 3, cex = 0.75)
+```
+
+
+# Model Based Clustering
+```{r fig.height=20, fig.width=20, message=TRUE, warning=TRUE, paged.print=TRUE}
+# Model Based Clustering
+library(mclust)
+fit <- Mclust(DF2)
+
+```
+
+```{r}
+summary(fit) # display the best model
+
+```
+
+```{r eval=FALSE, warning=FALSE, include=FALSE}
+plot(fit) # plot results
+
+
+```
+
+# Random Forest unbalanced Data Set
+```{r Random Forest, warning=FALSE}
+#Random Forest
+library(randomForest)
+fitRF1 <- randomForest(
+Revenue ~ ., method="anova",
+data=trainingData[1:17], importance=TRUE, ntree=100)
+```
+
+```{r fig.height=10, fig.width=10, message=TRUE, warning=FALSE, paged.print=TRUE}
+varImpPlot(fitRF1, main="")
+PredictionRF1 <- predict(fitRF1, testData)
+
+```
+
+```{r fig.height=10, fig.width=10, message=TRUE, warning=TRUE, paged.print=TRUE}
+cor(PredictionRF1,testData$Revenue)
+```
+
+
+```{r fig.height=10, fig.width=10, message=TRUE, warning=TRUE, paged.print=TRUE}
+library(ggplot2)
+df3 = data.frame(as.factor(testData$Revenue), PredictionRF1)
+colnames(df3) <- c("Test","Prediction")
+ggplot(df3, aes(x = Test, y = Prediction)) +
+geom_boxplot(outlier.colour = "red") +
+geom_jitter(width = 0.25, pch=20, col=rgb(0.1, 0.2, 0.8, 0.3))
+
+
+```
+# Random Forest Balanced Data Set
+```{r Random Forest, warning=FALSE}
+#Random Forest
+library(randomForest)
+fitRF2 <- randomForest(
+Revenue ~ ., method="anova",
+data=trainingData_Half[1:17], importance=TRUE, ntree=100)
+```
+
+```{r fig.height=10, fig.width=10, message=TRUE, warning=FALSE, paged.print=TRUE}
+varImpPlot(fitRF2, main="")
+PredictionRF2 <- predict(fitRF2, testData_Half)
+
+```
+
+```{r fig.height=10, fig.width=10, message=TRUE, warning=TRUE, paged.print=TRUE}
+cor(PredictionRF2,testData_Half$Revenue)
+```
+
+
+```{r fig.height=10, fig.width=10, message=TRUE, warning=TRUE, paged.print=TRUE}
+library(ggplot2)
+df3_2 = data.frame(as.factor(testData_Half$Revenue), PredictionRF2)
+colnames(df3_2) <- c("Test","Prediction")
+ggplot(df3_2, aes(x = Test, y = Prediction)) +
+geom_boxplot(outlier.colour = "red") +
+geom_jitter(width = 0.25, pch=20, col=rgb(0.1, 0.2, 0.8, 0.3))
+
+
+```
+
+
+# Hierarchical Clustering
+## libraries
+
+```{r fig.height=10, fig.width=10, message=TRUE, warning=TRUE, paged.print=TRUE}
+library(tidyverse)  # data manipulation
+library(cluster)    # clustering algorithms
+library(factoextra) # clustering visualization
+library(dendextend) # for comparing two dendrograms
+```
+
+## Scaling
+
+```{r fig.height=10, fig.width=10, message=TRUE, warning=TRUE, paged.print=TRUE}
+
+Scaled_DF <- as.data.frame(scale(DF2[1:17]))
+
+```
+
+```{r fig.height=10, fig.width=10, message=TRUE, warning=TRUE, paged.print=TRUE}
+
+#To remove any missing value that might be present in the data, type this:
+
+Scaled_DF <- na.omit(Scaled_DF)
+
+```
+
+
+
+## hclust
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+dist_mat <- dist(Scaled_DF, method = 'euclidean')
+hc1 <- hclust(dist_mat, method = "complete" )
+#hclust_avg <- hclust(dist_mat, method = 'average')
+
+```
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+plot(hc1, cex = 0.6, hang = -1)
+```
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+cut_avg <- cutree(hc1, k = 4)
+
+
+```
+
+
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+DF2$CUT_AVG = cut_avg
+```
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+table(cut_avg, DF2$Revenue)
+
+
+```
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+x= data.frame(DF2, DF2$KMEAN_SCALED == 1)
+table(x$TrafficType,x$KMEAN_SCALED)
+
+```
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+table(DF2$KMEAN,DF2$CUT_AVG)
+CrossTable(DF2$KMEAN,DF2$CUT_AVG)
+```
+
+
+##  Compute with agnes
+### slow really slow
+```{r eval=FALSE, fig.height=10, fig.width=10, message=TRUE, warning=FALSE, include=FALSE, paged.print=TRUE}
+hc2 <- agnes(Scaled_DF, method = "complete")
+
+```
+
+```{r eval=FALSE, fig.height=10, fig.width=10, message=TRUE, warning=FALSE, include=FALSE, paged.print=TRUE}
+# Agglomerative coefficient
+hc2$ac
+```
+
+```{r eval=FALSE, fig.height=10, fig.width=10, message=TRUE, warning=FALSE, include=FALSE, paged.print=TRUE}
+
+# methods to assess
+m <- c( "average", "single", "complete", "ward")
+names(m) <- c( "average", "single", "complete", "ward")
+
+# function to compute coefficient
+ac <- function(x) {
+  agnes(Scaled_DF, method = x)$ac
+}
+
+map_dbl(m, ac)
+
+```
+
+
+
+
+
+```{r eval=FALSE, fig.height=10, fig.width=10, message=TRUE, warning=FALSE, include=FALSE, paged.print=TRUE}
+plot(hc1)
+rect.hclust(hclust_avg , k = 2, border = 2:6)
+abline(h = 3, col = 'red')
+```
+
+
+```{r eval=FALSE, fig.height=10, fig.width=10, message=TRUE, warning=TRUE, include=FALSE, paged.print=TRUE}
+suppressPackageStartupMessages(library(dendextend))
+avg_dend_obj <- as.dendrogram(hc1)
+avg_col_dend <- color_branches(avg_dend_obj, h = 2)
+# cex: label size
+library("factoextra")
+fviz_dend(avg_col_dend, cex = 0.5)
+```
+
+
+## PCA 
+
+```{r eval=FALSE, fig.height=10, fig.width=10, message=TRUE, warning=TRUE, include=TRUE, paged.print=TRUE}
+pca_Data <- prcomp(DF2[1:17], scale. = TRUE)
+```
+
+```{r eval=FALSE, fig.height=10, fig.width=10, message=TRUE, warning=TRUE, include=TRUE, paged.print=TRUE}
+plot(pca_Data)
+```
+```{r eval=FALSE, fig.height=10, fig.width=10, message=TRUE, warning=TRUE, include=TRUE, paged.print=TRUE}
+scores_df <- as.data.frame(pca_Data$x)
+# Show first two PCs for head countries
+head(scores_df[1:5])
+```
+```{r eval=FALSE, fig.height=10, fig.width=10, message=TRUE, warning=TRUE, include=TRUE, paged.print=TRUE}
+
+library(scales)
+ramp <- colorRamp(c("yellow", "blue"))
+colours_by_mean <- rgb( 
+    ramp( as.vector(rescale(rowMeans(DF2[1:17]),c(0,1)))), 
+    max = 255 )
+plot(PC1~PC2, data=scores_df, 
+     main= "Existing TB cases per 100K distribution",
+     cex = .1, lty = "solid", col=colours_by_mean)
+text(PC1~PC2, data=scores_df, 
+     labels=rownames(DF2),
+     cex=.8, col=colours_by_mean)
+
+
+```
+
+```{r eval=FALSE, fig.height=10, fig.width=10, message=TRUE, warning=TRUE, include=TRUE, paged.print=TRUE}
+
+
+plot(PC1~PC2+PC3+PC4, data=scores_df,main= "Existing TB cases per 100K distribution",
+     cex = .1, lty = "solid")
+text(PC1~PC2, data=scores_df, 
+     labels=rownames(DF2),
+     cex=.8)
+```
+
+
+
+
+      
